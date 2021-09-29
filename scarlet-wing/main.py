@@ -1,69 +1,103 @@
+import time
+from subprocess import check_output
+
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+
+import lcd_lib
 import logging
-import datetime as date
-import timeTable
 
-# now = date.datetime.now()
-now = date.datetime(2021, 9, 27, 19, 56)  # For testing purposes
+import spCreds as spotify
 
-#  Try create a log file, exception is caught if it already exists
-try:
-    file = open("log.txt", "x")
-    file.close()
-except FileExistsError:
-    pass
+logging.basicConfig(filename="log.log", level=logging.INFO)
 
-#  Store the data from the rotation config into usable variables
-with open("weekRotation.txt", "r") as week:
-    weekRotation = int(week.readline())
-    lastChanged = int(week.readline())
+lcd = lcd_lib.lcd()
+lcd.lcd_clear()
+songString = ""
 
-#  do a little logging
-logging.basicConfig(filename="log.txt", filemode="a", level=logging.INFO)
-
-#  Day is sliced to the first three letters as the timetable indexes work off of a rotation and the first three letters
-#  of the week, such as "AMon" and "BTue"
-day = now.strftime("%A")[:3]
-#  Sets dayNum to the numeric day
-dayNum = now.day
-
-if day == "Mon" and lastChanged != dayNum:
-    logging.info("Condition fulfilled, changing week type")
-    with open("weekRotation.txt", "w") as week:
-        if weekRotation == 2:
-            week.writelines(f"1\n{dayNum}")
-        elif weekRotation == 1:
-            week.writelines(f"2\n{dayNum}")
-
-    with open("weekRotation.txt", "r") as week:
-        weekRotation = int(week.readline())
-
-#  This statement MUST be here so the usable rotation is only set once it has been changed on Mondays
-if weekRotation == 2:
-    rotation = "B"
-elif weekRotation == 1:
-    rotation = "A"
-
-dayDataSet = timeTable.table[rotation + day]
+isPlaying = False
+s_remaining_2int = 0
+min_remaining = 0
 
 
-def get_next_period():
-    lessonCounter = 0  # Must be set to 1 because the time formats are in index 0, offsetting the other indices by 1
-    for time in dayDataSet[0]:
-        lessonCounter += 1
-        parsedTime = date.datetime(now.year, now.month, now.day, int(time[:2]), int(time[3:]))
-        if parsedTime > now:
-            print(parsedTime)
-            break
-    print(lessonCounter)
-    return lessonCounter
+sp = spotipy.Spotify(SpotifyOAuth(scope="user-read-currently-playing", client_id=spotify.creds["client_id"],  client_secret=spotify.creds["client_secret"], redirect_uri=spotify.creds["redir"], open_browser=False).get_access_token(as_dict=False))
 
 
-def get_current_period():
-    return get_next_period() - 1
+def displayDTT(display):
+    lcd.lcd_display_string(time.strftime("%H:%M %d/%m", time.localtime()) + " {}".format(display), 1)
+
+def twoInt(intInput):
+    if len(str(intInput)) < 2:
+        newInt = str(0) + str(intInput)
+        return newInt
+    else:
+        return intInput
 
 
-def parse_period(periodNumber):
-    return dayDataSet[periodNumber]
+def getSongAttrib():        
+    global songString, isPlaying, s_remaining_2int, min_remaining
+    count = 0
+    data = sp.current_user_playing_track()
+    songString = ""
+    artistString = ""
+
+    try:
+
+        for _ in data["item"]["artists"]:
+
+            artistString = artistString + " & " + data["item"]["artists"][count]["name"]
+            count += 1
+            isPlaying = bool(data["is_playing"])
+            songString = artistString[3:] + " - " + data["item"]["name"]
+
+            ms_remaining = data["item"]["duration_ms"] - data["progress_ms"]
+            s_remaining = int(ms_remaining / 1000)
+            min_remaining = int(s_remaining / 60)
+            s_remaining_2int = twoInt(int(s_remaining % 60))
+
+    except TypeError:
+
+        pass
 
 
-print(parse_period(get_current_period()))
+while True:
+
+    while isPlaying:
+
+        getSongAttrib()
+        displayedString = songString
+        if len(displayedString) > 16:
+
+            displayedString = songString + "   "
+
+            for i in range(0, len(displayedString)):
+                getSongAttrib()
+                displayDTT("{}:{}".format(min_remaining, s_remaining_2int))
+                lcd.lcd_display_string(displayedString[0:16], 2)
+                displayedString = displayedString[1:] + displayedString[0]
+                time.sleep(0.5)
+                displayDTT("{}:{}".format(min_remaining, s_remaining_2int))
+
+        else:
+
+            if len(displayedString) == 15:
+
+                displayedString = songString + " "
+                lcd.lcd_display_string(displayedString, 2)
+                displayDTT("{}:{}".format(min_remaining, s_remaining_2int))
+                time.sleep(0.5)
+
+            else:
+
+                displayedStringDiff = 8 - len(displayedString) / 2
+                displayedString = displayedStringDiff * " " + displayedString
+                lcd.lcd_display_string(displayedString, 2)
+                displayDTT("{}:{}".format(min_remaining, s_remaining_2int))
+                time.sleep(0.5)
+
+    while not isPlaying:
+        getSongAttrib()
+        cpu_temp = check_output(["/opt/vc/bin/vcgencmd", "measure_temp"]).decode("utf-8")[5:9]
+        lcd.lcd_display_string(time.strftime("%H:%M %d/%m", time.localtime()) + f" {cpu_temp}", 1)
+        lcd.lcd_display_string("TheSmith:Rosetta", 2)
+        time.sleep(0.5)

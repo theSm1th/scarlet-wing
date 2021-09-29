@@ -364,3 +364,8 @@ FodyWeavers.xsd
 
 timeTable.py
 lcd_lib.py
+spCreds.py
+cache_handler.py
+deployPY.py
+deployScript.bat
+module1.py
