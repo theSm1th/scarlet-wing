@@ -8,6 +8,7 @@ import lcd_lib
 import logging
 
 import spCreds as spotify
+import cache_handler
 
 logging.basicConfig(filename="log.log", level=logging.INFO)
 
@@ -20,8 +21,17 @@ s_remaining_2int = 0
 min_remaining = 0
 
 
-sp = spotipy.Spotify(SpotifyOAuth(scope="user-read-currently-playing", client_id=spotify.creds["client_id"],  client_secret=spotify.creds["client_secret"], redirect_uri=spotify.creds["redir"], open_browser=False).get_access_token(as_dict=False))
+handler = cache_handler.CacheFileHandler(username=spotify.creds["username"])
 
+while True:
+    try:
+        print(handler.get_cached_token())
+        sp = spotipy.Spotify(handler.get_cached_token())
+        sp.current_user_playing_track()
+        break
+
+    except spotipy.exceptions.SpotifyException:
+        handler.save_token_to_cache(SpotifyOAuth(scope="user-read-currently-playing", client_id=spotify.creds["client_id"],  client_secret=spotify.creds["client_secret"], redirect_uri=spotify.creds["redir"], open_browser=False).get_access_token(as_dict=False))
 
 def displayDTT(display):
     lcd.lcd_display_string(time.strftime("%H:%M %d/%m", time.localtime()) + " {}".format(display), 1)
